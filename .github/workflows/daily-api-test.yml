@@ -1,0 +1,62 @@
+name: Daily API Test
+
+on:
+  schedule:
+    # GitHub Actions cron is UTC. 02:00 UTC = 10:00 Asia/Shanghai.
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  api-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Start mock server
+        run: |
+          cd mock_server/api_server
+          uv sync
+          nohup uv run python base/flask_service.py > /tmp/mock_server.log 2>&1 &
+          sleep 6
+          curl -f http://127.0.0.1:8787/index
+
+      - name: Run API tests
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          uv sync
+          uv run pytest -vs "testcase/Single interface/test_debug_api.py" --junitxml=report/results.xml
+
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: report/results.xml
+          if-no-files-found: warn
+
+      - name: Send Feishu notification
+        if: always()
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+        run: |
+          STATUS="${{ job.status }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BRANCH="${{ github.ref_name }}"
+          MSG="【接口自动化】执行状态: ${STATUS}\n分支: ${BRANCH}\n详情: ${RUN_URL}"
+          if [ -z "${FEISHU_WEBHOOK}" ]; then
+            echo "FEISHU_WEBHOOK is not configured, skip notification."
+            exit 0
+          fi
+          curl -sS -X POST "${FEISHU_WEBHOOK}" \
+            -H "Content-Type: application/json" \
+            -d "{\"msg_type\":\"text\",\"content\":{\"text\":\"${MSG}\"}}"
