@@ -1,0 +1,16 @@
+baseinfo:
+  url: "http://example.com/login"
+  username: "testuser"
+  password: "password123"
+
+test_cases:
+  - name: "Valid Login"
+    steps:
+      - action: "navigate"
+        target: "url"
+        
+  - name: "Enter Username"
+    steps:
+      - action: "input"
+        target: "username"
+        value: "username"
