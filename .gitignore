@@ -4,3 +4,17 @@
 /.idea
 *.pyc
 /report/temp
+
+# Python caches
+__pycache__/
+*.pyo
+
+# Pytest caches/reports
+.pytest_cache/
+笔记/pytest_demo/.pytest_cache/
+笔记/pytest_demo/reports/
+
+# Log files
+logs/*.log
+logs/*.logs
+*\\test.*.logs
