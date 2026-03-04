@@ -51,8 +51,17 @@ jobs:
         run: |
           STATUS="${{ job.status }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          ARTIFACT_URL="${RUN_URL}#artifacts"
           BRANCH="${{ github.ref_name }}"
-          MSG="【接口自动化】执行状态: ${STATUS}\n分支: ${BRANCH}\n详情: ${RUN_URL}"
+          TESTS="N/A"
+          FAILURES="N/A"
+          ERRORS="N/A"
+          SKIPPED="N/A"
+          if [ -f "report/results.xml" ]; then
+            STATS=$(python -c 'import xml.etree.ElementTree as ET; r=ET.parse("report/results.xml").getroot(); print("|".join([r.attrib.get("tests","N/A"), r.attrib.get("failures","N/A"), r.attrib.get("errors","N/A"), r.attrib.get("skipped","N/A")]))')
+            IFS='|' read -r TESTS FAILURES ERRORS SKIPPED <<< "${STATS}"
+          fi
+          MSG="【接口自动化】执行状态: ${STATUS}\n分支: ${BRANCH}\n用例总数: ${TESTS} 失败: ${FAILURES} 错误: ${ERRORS} 跳过: ${SKIPPED}\n运行详情: ${RUN_URL}\n测试报告: ${ARTIFACT_URL}"
           if [ -z "${FEISHU_WEBHOOK}" ]; then
             echo "FEISHU_WEBHOOK is not configured, skip notification."
             exit 0
