@@ -185,7 +185,9 @@ def add_user():
     phone = flask.request.form.get('phone')
     token = flask.request.form.get('token')
     if all([username, password, role_id, dates, phone]) and token == get_token['token']:
-        with open('../data/mockdata/userManage.json', 'a', encoding='utf-8') as f:
+        user_manage_path = os.path.join(DIR_BASE, 'data', 'mockdata', 'userManage.json')
+        os.makedirs(os.path.dirname(user_manage_path), exist_ok=True)
+        with open(user_manage_path, 'a', encoding='utf-8') as f:
             add_user_info = {
                 'id': ''.join([random.choice(string.digits) for i in range(11)]),
                 'username': username,
@@ -1786,4 +1788,3 @@ def create_insert_accident():
 if __name__ == '__main__':
     # debug=True，改代码后不用重启，会自动重启
     api.run(host='127.0.0.1', port=8787, debug=True)
-
