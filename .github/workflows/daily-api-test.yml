@@ -6,10 +6,18 @@ on:
     - cron: "0 2 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   api-test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy-pages.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,11 +30,20 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
 
+      - name: Setup Java (for Allure CLI)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Allure CLI
+        run: npm install -g allure-commandline --unsafe-perm=true
+
       - name: Start mock server
         run: |
           cd mock_server/api_server
           uv sync
-          nohup uv run python base/flask_service.py > /tmp/mock_server.log 2>&1 &
+          nohup uv run python -c "from base.flask_service import api; api.run(host='127.0.0.1', port=8787, debug=False)" > /tmp/mock_server.log 2>&1 &
           sleep 6
           curl -f http://127.0.0.1:8787/index
 
@@ -34,7 +51,7 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE"
           uv sync
-          uv run pytest -vs "testcase/Single interface/test_debug_api.py" --junitxml=report/results.xml
+          uv run pytest -vs "testcase/Single interface/test_debug_api.py" --junitxml=report/results.xml --alluredir=report/allure-results
 
       - name: Upload JUnit report
         if: always()
@@ -44,6 +61,35 @@ jobs:
           path: report/results.xml
           if-no-files-found: warn
 
+      - name: Generate Allure HTML report
+        if: always()
+        run: |
+          mkdir -p report/allure-results
+          allure generate report/allure-results -o report/allure-report --clean
+
+      - name: Upload Allure report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: report/allure-report
+          if-no-files-found: warn
+
+      - name: Setup Pages
+        if: always()
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: report/allure-report
+
+      - name: Deploy to GitHub Pages
+        if: always()
+        id: deploy-pages
+        uses: actions/deploy-pages@v4
+
       - name: Send Feishu notification
         if: always()
         env:
@@ -52,6 +98,10 @@ jobs:
           STATUS="${{ job.status }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           ARTIFACT_URL="${RUN_URL}#artifacts"
+          PAGES_URL="${{ steps.deploy-pages.outputs.page_url }}"
+          if [ -z "${PAGES_URL}" ]; then
+            PAGES_URL="N/A"
+          fi
           BRANCH="${{ github.ref_name }}"
           TESTS="N/A"
           FAILURES="N/A"
@@ -61,7 +111,7 @@ jobs:
             STATS=$(python -c 'import xml.etree.ElementTree as ET; r=ET.parse("report/results.xml").getroot(); print("|".join([r.attrib.get("tests","N/A"), r.attrib.get("failures","N/A"), r.attrib.get("errors","N/A"), r.attrib.get("skipped","N/A")]))')
             IFS='|' read -r TESTS FAILURES ERRORS SKIPPED <<< "${STATS}"
           fi
-          MSG="【接口自动化】执行状态: ${STATUS}\n分支: ${BRANCH}\n用例总数: ${TESTS} 失败: ${FAILURES} 错误: ${ERRORS} 跳过: ${SKIPPED}\n运行详情: ${RUN_URL}\n测试报告: ${ARTIFACT_URL}"
+          MSG="【接口自动化】执行状态: ${STATUS}\n分支: ${BRANCH}\n用例总数: ${TESTS} 失败: ${FAILURES} 错误: ${ERRORS} 跳过: ${SKIPPED}\n运行详情: ${RUN_URL}\n下载报告: ${ARTIFACT_URL}\n在线报告: ${PAGES_URL}"
           if [ -z "${FEISHU_WEBHOOK}" ]; then
             echo "FEISHU_WEBHOOK is not configured, skip notification."
             exit 0
